@@ -7,31 +7,43 @@ FROM flisboac/ws-base
 
 ENV WS_AT="guest"
 ENV WS_HOME="/usr/local/share/ws"
+ENV WS_WORKSPACE="${WS_WORKSPACE:?WS_WORKSPACE not given.}"
+ENV WS_WORKSPACE_HOME="/workspace"
 
-ENV WS_USER_NAME="${WS_USER_NAME:-developer}"
-ENV WS_USER_ID="${WS_USER_ID:-1000}"
-ENV WS_USER_HOME="${WS_USER_HOME:-/home/$WS_USER_NAME}"
-ENV WS_USER_BUILD_SCRIPT="${WS_USER_BUILD_SCRIPT:-$WS_USER_HOME/.wsbuild}"
-ENV WS_USER_SHELL="${WS_USER_SHELL:-/bin/sh}"
-ENV WS_GROUP_NAME="${WS_GROUP_NAME:-$WS_USER_NAME}"
-ENV WS_GROUP_ID="${WS_GROUP_NAME:-$WS_USER_ID}"
+ENV WS_UNAME="${WS_UNAME:-developer}"
+ENV WS_UID="${WS_UID:-1000}"
+ENV WS_UHOME="/home/$WS_UNAME"
+ENV WS_SHELL="${WS_SHELL:-/bin/sh}"
+ENV WS_UBRIEF="${WS_UBRIEF-Software Developer}"
+ENV WS_GNAME="${WS_GNAME:-$WS_UNAME}"
+ENV WS_GID="${WS_GNAME:-$WS_UID}"
 
-# Setup WS tool
+# ---
+
+VOLUME "$WS_WORKSPACE_HOME"
 VOLUME "$WS_HOME"
-ENV PATH="$WS_HOME/cmd:$WS_HOME/bin:$PATH"
+ENV PATH="$WS_HOME/bin:$PATH"
 
 # Create the developer user
-VOLUME "$WS_USER_HOME"
-RUN groupadd -r "$WS_GROUP_NAME" -g "$WS_GROUP_ID" \
-    && useradd -u "$WS_USER_ID" -r -g "$WS_GROUP_NAME" -d "$WS_USER_HOME" -s "$WS_USER_SHELL" -c "Software Developer" "$WS_USER_NAME"
+RUN groupadd -r "$WS_GNAME" -g "$WS_GID" \
+    && useradd -u "$WS_UID" -r -g "$WS_GNAME" -d "$WS_UHOME" -s "$WS_SHELL" -c "WS_UBRIEF" "$WS_UNAME"
 
 # Add sudo permissions
-RUN echo "$WS_USER_NAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$WS_USER_NAME"
+RUN echo "$WS_UNAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$WS_UNAME"
+
+# Install internal WS scripts
+RUN mkdir /root/ws-scripts
+ADD scripts/* /root/ws-scripts
+RUN echo "#$WS_SHELL\n[ "$?" -gt 0 ] && exec \"$@\"\n$WS_SHELL" > /root/ws-scripts/ws-run
+RUN chmod a+x /root/ws-scripts/*
 
 # Run first-time setup script
-WORKDIR "$WS_USER_HOME"
-USER "$WS_USER_NAME"
-RUN { [ -f "$WS_USER_BUILD_SCRIPT" ] && [ -x "$WS_USER_BUILD_SCRIPT" ]; } && "$WS_USER_BUILD_SCRIPT"
+WORKDIR "$WS_WORKSPACE_HOME"
+RUN /root/ws-scripts/ws-build
 
+# ---
 
-ENTRYPOINT [ "$WS_USER_SHELL" ]
+WORKDIR "$WS_WORKSPACE_HOME"
+USER "$WS_UNAME"
+ENTRYPOINT [ "/root/ws-scripts/ws-run" ]
+CMD [ "bash" ]
